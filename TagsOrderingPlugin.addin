@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Tags Ordering Plugin</Name>
+    <Assembly>C:\ProgramData\Autodesk\Revit\Addins\2022\TagsOrderingPlugin.dll</Assembly>
+    <FullClassName>TagsOrderingPlugin.App</FullClassName>
+    <ClientId>{a1b2c3d4-e5f6-4ab8-89cd-1234567890ab}</ClientId>
+    <VendorId>BTankut</VendorId>
+    <VendorDescription>BT, https://github.com/BTankut</VendorDescription>
+  </AddIn>
+</RevitAddIns>

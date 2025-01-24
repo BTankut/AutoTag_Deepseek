@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Revit Plugin",
+            "type": "clr",
+            "request": "attach",
+            "processName": "Revit",
+            "justMyCode": false,
+            "requireExactSource": false,
+            "symbolOptions": {
+                "searchPaths": [
+                    "C:\\Program Files\\Autodesk\\Revit 2022",
+                    "C:\\ProgramData\\Autodesk\\Revit\\Addins\\2022"
+                ],
+                "searchMicrosoftSymbolServer": true
+            },
+            "logging": {
+                "moduleLoad": false,
+                "exceptions": true,
+                "programOutput": true,
+                "engineLogging": false,
+                "browserStdOut": false
+            },
+            "visualizerFile": "${workspaceFolder}/.vscode/revit.natvis"
+        }
+    ]
+}

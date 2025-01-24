@@ -1,0 +1,10 @@
+{
+    "dotnet.defaultSolution": "AutoTag_Deepseek.sln",
+    "omnisharp.enableRoslynAnalyzers": true,
+    "omnisharp.enableEditorConfigSupport": true,
+    "csharp.format.enable": true,
+    "files.exclude": {
+        "**/bin": true,
+        "**/obj": true
+    }
+}
