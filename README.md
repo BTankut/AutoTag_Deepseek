@@ -1,37 +1,37 @@
-# AutoTag - Revit Etiket Düzenleme Eklentisi
+# AutoTag_Deepseek - Revit Tag Management Plugin
 
-Revit etiketlerini otomatik olarak düzenleyen ve konumlandıran bir Revit eklentisi.
+A Revit plugin that automatically organizes and positions tags.
 
-## Özellikler
+## Features
 
-- Etiketleri Y ekseninde otomatik sıralama
-- Tag listesi yönüne göre akıllı konumlandırma:
-  - +X yönünde: Yukarıdan aşağıya normal sıralama
-  - -X yönünde: Yukarıdan aşağıya ters sıralama (leader çakışmalarını önlemek için)
-- 500mm sabit dikey aralık
-- Host bağlı etiketler için otomatik kontrol
-- Detaylı loglama sistemi
+- Automatic tag arrangement along Y-axis
+- Smart positioning based on tag list direction:
+  - +X direction: Top to bottom normal ordering
+  - -X direction: Top to bottom reverse ordering (to prevent leader conflicts)
+- 500mm fixed vertical spacing
+- Automatic check for host-bound tags
+- Detailed logging system
 
-## Teknik Detaylar
+## Technical Details
 
 - .NET Framework 4.8
 - Revit 2022 API
 - C# 9.0
-- Transaction yönetimi
-- Metrik sistem desteği (mm)
+- Transaction management
+- Metric system support (mm)
 
-## Kullanım
+## Usage
 
-1. Revit'te "BIRD testTask" sekmesini açın
-2. "Auto Arrange" butonuna tıklayın
-3. Düzenlemek istediğiniz etiketleri seçin
-4. Başlangıç noktasını belirleyin
+1. Open "BIRD testTask" tab in Revit
+2. Click "Auto Arrange" button
+3. Select the tags you want to arrange
+4. Specify the starting point
 
-## Hata Ayıklama
+## Debugging
 
-Log dosyası konumu: `%AppData%/TagsOrdering.log`
+Log file location: `%AppData%/TagsOrdering.log`
 
-## Geliştirici
+## Developer
 
 - **BT**
 - GitHub: BTankut
