@@ -58,7 +58,7 @@ namespace TagsOrderingPlugin
         /// <param name="sortedTags">Sıralanmış etiketler</param>
         /// <param name="startPoint">Başlangıç noktası</param>
         /// <returns>Başarı durumu</returns>
-        public bool PlaceSortedTags(List<IndependentTag> sortedTags, XYZ startPoint)
+        public bool PlaceSortedTags(List<IndependentTag> sortedTags, XYZ startPoint, TagSortDirection direction)
         {
             try
             {
@@ -71,72 +71,56 @@ namespace TagsOrderingPlugin
 
                     try
                     {
-                        // Metrik→Feet dönüşümünü logla
+                        // Spacing değerlerini hesapla
                         double spacingFeet = UnitUtils.ConvertToInternalUnits(SPACING_MM, UnitTypeId.Millimeters);
-                        Logger.LogInfo($"500mm = {spacingFeet:F6} feet");
+                        Logger.LogInfo($"Aralık mesafesi: {SPACING_MM}mm = {spacingFeet:F6} feet");
 
-                        // Tag listesinin yönünü kontrol et
-                        var firstTag = sortedTags.First();
-                        var hostElement = _doc.GetElement(firstTag.GetTaggedLocalElementIds().First());
-                        var hostLocation = (hostElement.Location as LocationPoint)?.Point;
-                        
-                        if (hostLocation != null)
-                        {
-                            bool isNegativeX = firstTag.TagHeadPosition.X < hostLocation.X;
-                            Logger.LogInfo($"Tag listesi yönü: {(isNegativeX ? "-X" : "+X")}");
+                        // Başlangıç noktasını belirle
+                        XYZ currentPosition = startPoint;
 
-                            // -X yönünde ise yeni sıralı liste oluştur
-                            if (isNegativeX)
-                            {
-                                sortedTags = sortedTags.OrderByDescending(t => t.TagHeadPosition.Y).ToList();
-                                Logger.LogInfo("Liste -X yönünde, sıralama tersine çevrildi");
-                            }
-                            else
-                            {
-                                sortedTags = sortedTags.OrderBy(t => t.TagHeadPosition.Y).ToList();
-                                Logger.LogInfo("Liste +X yönünde, normal sıralama");
-                            }
-                        }
-
-                        // Tüm etiketlerin ORİJİNAL konumlarını logla
-                        Logger.LogInfo("Etiketlerin Orijinal Konumları:");
+                        // Etiketleri konumlandır
                         foreach (var tag in sortedTags)
                         {
-                            Logger.LogInfo($"ID: {tag.Id} | X={tag.TagHeadPosition.X:F3}, Y={tag.TagHeadPosition.Y:F3}");
-                        }
-
-                        // Etiketleri YENİ KONUMLARA taşı
-                        for (int i = 0; i < sortedTags.Count; i++)
-                        {
-                            var tag = sortedTags[i];
-
-                            // Yeni konumu hesapla (Y ekseninde alt alta)
-                            XYZ newPosition = new XYZ(
-                                startPoint.X,                    // X sabit
-                                startPoint.Y - (i * spacingFeet), // Y ekseninde aşağı doğru
-                                startPoint.Z                     // Z sabit
-                            );
-
                             try
                             {
-                                // Etiketin pozisyonunu DEĞİŞTİR
-                                tag.TagHeadPosition = newPosition;
-                                Logger.LogSuccess($"ID {tag.Id}: Yeni konum X={newPosition.X:F3}");
+                                // 1. Etiket konumunu güncelle
+                                tag.TagHeadPosition = currentPosition;
+                                Logger.LogSuccess($"ID {tag.Id}: Yeni konum X={currentPosition.X:F3}, Y={currentPosition.Y:F3}");
+
+                                // 2. Lider ayarlarını güncelle
+                                if (tag.HasLeader && tag.GetTaggedLocalElementIds().Any())
+                                {
+                                    var element = _doc.GetElement(tag.GetTaggedLocalElementIds().First());
+                                    if (element != null && element.IsValidObject)
+                                    {
+                                        tag.LeaderEndCondition = LeaderEndCondition.Attached;
+                                        var reference = tag.GetTaggedReferences().First();
+                                        
+                                        if (element.Location is LocationPoint locPoint)
+                                        {
+                                            tag.SetLeaderEnd(reference, locPoint.Point);
+                                            Logger.LogInfo($"ID {tag.Id}: Lider element konumuna bağlandı");
+                                        }
+                                    }
+                                }
+
+                                // 3. Bir sonraki pozisyonu hesapla
+                                currentPosition = direction == TagSortDirection.Horizontal
+                                    ? new XYZ(
+                                        currentPosition.X + spacingFeet,  // X ekseninde sağa doğru
+                                        currentPosition.Y,
+                                        currentPosition.Z
+                                    )
+                                    : new XYZ(
+                                        currentPosition.X,
+                                        currentPosition.Y - spacingFeet,  // Y ekseninde aşağı doğru
+                                        currentPosition.Z
+                                    );
                             }
                             catch (Exception ex)
                             {
-                                Logger.LogError($"ID {tag.Id}: Konum değiştirilemedi - {ex.Message}");
-                                
-                                // Alternatif yöntem dene
-                                try
-                                {
-                                    ElementTransformUtils.MoveElement(_doc, tag.Id, newPosition - tag.TagHeadPosition);
-                                    Logger.LogSuccess($"ID {tag.Id}: Alternatif yöntemle taşındı");
-                                }
-                                catch (Exception moveEx)
-                                {
-                                    Logger.LogError($"ID {tag.Id}: Alternatif yöntem de başarısız - {moveEx.Message}");
-                                }
+                                Logger.LogError($"ID {tag.Id}: İşlem başarısız - {ex.Message}");
+                                continue;
                             }
                         }
 

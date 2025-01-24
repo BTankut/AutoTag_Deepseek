@@ -60,22 +60,19 @@ namespace TagsOrderingPlugin
 
                     try
                     {
-                        // Etiketleri otomatik sırala
-                        Logger.LogInfo("Etiketler sıralanıyor...");
-                        var tagSorter = new TagSorter(doc);
-                        var sortedTags = tagSorter.SortByCoordinates(selectedTags);
+                        // Sıralama yönünü kullanıcıya sor
+                        var dialog = new TaskDialog("Sıralama Yönü");
+                        dialog.MainInstruction = "Etiketler nasıl sıralansın?";
+                        dialog.MainContent = "Yatay sıralama: Soldan sağa\nDikey sıralama: Yukarıdan aşağıya";
+                        dialog.CommonButtons = TaskDialogCommonButtons.None;
+                        dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Yatay Sıralama");
+                        dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Dikey Sıralama");
+                        dialog.DefaultButton = TaskDialogResult.CommandLink1;
 
-                        if (!sortedTags.Any())
-                        {
-                            Logger.LogError("Etiketler sıralanamadı.");
-                            transGroup.RollBack();
-                            message = "Etiketler sıralanamadı.";
-                            return Result.Failed;
-                        }
-
-                        Logger.LogDebug($"Sıralanan etiket sayısı: {sortedTags.Count}");
-                        Logger.LogDebug($"Sıralanan etiket ID'leri: {string.Join(", ", sortedTags.Select(tag => tag.Id.IntegerValue))}");
-                        Logger.LogDebug($"Sıralanan etiket konumları: {string.Join(", ", sortedTags.Select(tag => $"({tag.TagHeadPosition.X:F2}, {tag.TagHeadPosition.Y:F2})"))}");
+                        var result = dialog.Show();
+                        var direction = (result == TaskDialogResult.CommandLink1) 
+                            ? TagSortDirection.Horizontal 
+                            : TagSortDirection.Vertical;
 
                         // Manuel konumlandırma için başlangıç noktası al
                         var placer = new AutoSortWithManualPlacement(doc, uidoc);
@@ -88,8 +85,20 @@ namespace TagsOrderingPlugin
                             return Result.Cancelled;
                         }
 
-                        // Etiketleri konumlandır
-                        if (!placer.PlaceSortedTags(sortedTags, startPoint))
+                        // Etiketleri seçilen yöne göre sırala
+                        Logger.LogInfo($"Etiketler {direction} yönünde sıralanıyor...");
+                        var tagSorter = new TagSorter(doc);
+                        var sortedTags = tagSorter.SortByCoordinates(selectedTags, direction, startPoint);
+
+                        if (!sortedTags.Any())
+                        {
+                            Logger.LogInfo("Başlangıç noktası seçilmedi, işlem iptal edildi.");
+                            transGroup.RollBack();
+                            return Result.Cancelled;
+                        }
+
+                        // Etiketleri seçilen yönde konumlandır
+                        if (!placer.PlaceSortedTags(sortedTags, startPoint, direction))
                         {
                             Logger.LogError("Etiketler konumlandırılamadı.");
                             transGroup.RollBack();

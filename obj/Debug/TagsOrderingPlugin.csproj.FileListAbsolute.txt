@@ -5,3 +5,4 @@ C:\ProgramData\Autodesk\Revit\Addins\2022\TagsOrderingPlugin.dll
 C:\ProgramData\Autodesk\Revit\Addins\2022\TagsOrderingPlugin.pdb
 C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Debug\TagsOrderingPlugin.dll
 C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Debug\TagsOrderingPlugin.pdb
+C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Debug\TagsOrderingPlugin.sourcelink.json
