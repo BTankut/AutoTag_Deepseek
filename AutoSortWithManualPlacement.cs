@@ -14,7 +14,7 @@ namespace TagsOrderingPlugin
     {
         private readonly Document _doc;
         private readonly UIDocument _uiDoc;
-        private const double SPACING_MM = 500.0; // 500mm sabit aralık
+        private const double SPACING_MM = 100.0; // 100mm sabit aralık
         private const double SAFETY_MARGIN = 100.0; // 100mm güvenlik marjı
         private const double OFFSET_MM = 100.0; // 100mm offset mesafesi
 
@@ -161,81 +161,80 @@ namespace TagsOrderingPlugin
 
                     try
                     {
-                        // Offset değerini hesapla (100mm)
-                        double offset = UnitUtils.ConvertToInternalUnits(OFFSET_MM, UnitTypeId.Millimeters);
-                        Logger.LogInfo($"Offset mesafesi: {OFFSET_MM}mm = {offset:F6} feet");
+                        // Spacing değerlerini hesapla
+                        double spacingFeet = UnitUtils.ConvertToInternalUnits(SPACING_MM, UnitTypeId.Millimeters);
+                        Logger.LogInfo($"Aralık mesafesi: {SPACING_MM}mm = {spacingFeet:F6} feet");
 
-                        XYZ currentStart = startPoint;
-                        double lastTagEndX = startPoint.X;
-                        double lastTagEndY = startPoint.Y;
+                        XYZ currentPosition = startPoint;
+                        double previousEdge = 0.0; // Önceki etiketin kenarı (yatayda sağ, dikeyde alt)
+                        bool isFirstTag = true;
 
                         foreach (var tag in sortedTags)
                         {
                             try
                             {
-                                // Etiketin gerçek sınırlarını al
-                                var (minX, maxX, minY, maxY) = GetTagBounds(tag);
-                                double tagWidth = maxX - minX;
-                                double tagHeight = maxY - minY;
+                                // Bounding box bilgisini al
+                                var boundingBox = tag.get_BoundingBox(_doc.ActiveView);
+                                if (boundingBox == null)
+                                {
+                                    Logger.LogWarning($"ID {tag.Id}: Bounding box alınamadı, atlanıyor.");
+                                    continue;
+                                }
 
-                                // TagHeadPosition ile etiketin sol/üst kenarı arasındaki mesafeyi hesapla
-                                double headToLeftEdge = tag.TagHeadPosition.X - minX;
-                                double headToTopEdge = tag.TagHeadPosition.Y - maxY;
-
-                                // Yeni konumu hesapla
                                 if (direction == TagSortDirection.Horizontal)
                                 {
-                                    if (tag == sortedTags.First())
+                                    // Yatay offsetleri hesapla
+                                    double offsetToLeft = tag.TagHeadPosition.X - boundingBox.Min.X;
+                                    double offsetToRight = boundingBox.Max.X - tag.TagHeadPosition.X;
+
+                                    if (isFirstTag)
                                     {
-                                        // İlk etiket için başlangıç noktasını kullan
-                                        currentStart = startPoint;
-                                        // Etiketin sağ kenarını hesapla
-                                        lastTagEndX = startPoint.X + (maxX - tag.TagHeadPosition.X);
+                                        tag.TagHeadPosition = currentPosition;
+                                        previousEdge = currentPosition.X + offsetToRight;
+                                        isFirstTag = false;
                                     }
                                     else
                                     {
-                                        // Diğer etiketler için bir önceki etiketin sağ kenarından offset kadar sonra
-                                        currentStart = new XYZ(
-                                            lastTagEndX + offset,
-                                            startPoint.Y,
-                                            startPoint.Z
-                                        );
-                                        // Yeni etiketin sağ kenarını hesapla
-                                        lastTagEndX = currentStart.X + (maxX - tag.TagHeadPosition.X);
-                                    }
+                                        // Yeni etiketin sol kenarı = önceki etiketin sağ kenarı + boşluk
+                                        double newTagLeft = previousEdge + spacingFeet;
+                                        // TagHeadPosition.X = yeni sol kenar + sol offset
+                                        double newTagHeadX = newTagLeft + offsetToLeft;
+                                        currentPosition = new XYZ(newTagHeadX, currentPosition.Y, currentPosition.Z);
+                                        tag.TagHeadPosition = currentPosition;
 
-                                    Logger.LogDebug($"ID {tag.Id}: X={currentStart.X:F3}, Width={tagWidth:F3}, EndX={lastTagEndX:F3}");
+                                        // Bu etiketin sağ kenarını güncelle
+                                        previousEdge = newTagHeadX + offsetToRight;
+                                    }
                                 }
-                                else
+                                else // Dikey sıralama
                                 {
-                                    if (tag == sortedTags.First())
+                                    // Dikey offsetleri hesapla
+                                    double offsetToTop = boundingBox.Max.Y - tag.TagHeadPosition.Y;
+                                    double offsetToBottom = tag.TagHeadPosition.Y - boundingBox.Min.Y;
+
+                                    if (isFirstTag)
                                     {
-                                        // İlk etiket için başlangıç noktasını kullan
-                                        currentStart = startPoint;
-                                        // Etiketin alt kenarını hesapla
-                                        lastTagEndY = startPoint.Y + (minY - tag.TagHeadPosition.Y);
+                                        tag.TagHeadPosition = currentPosition;
+                                        previousEdge = currentPosition.Y - offsetToBottom;
+                                        isFirstTag = false;
                                     }
                                     else
                                     {
-                                        // Diğer etiketler için bir önceki etiketin alt kenarından offset kadar aşağı
-                                        currentStart = new XYZ(
-                                            startPoint.X,
-                                            lastTagEndY - offset,
-                                            startPoint.Z
-                                        );
-                                        // Yeni etiketin alt kenarını hesapla
-                                        lastTagEndY = currentStart.Y + (minY - tag.TagHeadPosition.Y);
-                                    }
+                                        // Yeni etiketin üst kenarı = önceki etiketin alt kenarı - boşluk
+                                        double newTagTop = previousEdge - spacingFeet;
+                                        // TagHeadPosition.Y = yeni üst kenar - üst offset
+                                        double newTagHeadY = newTagTop - offsetToTop;
+                                        currentPosition = new XYZ(currentPosition.X, newTagHeadY, currentPosition.Z);
+                                        tag.TagHeadPosition = currentPosition;
 
-                                    Logger.LogDebug($"ID {tag.Id}: Y={currentStart.Y:F3}, Height={tagHeight:F3}, EndY={lastTagEndY:F3}");
+                                        // Bu etiketin alt kenarını güncelle
+                                        previousEdge = newTagHeadY - offsetToBottom;
+                                    }
                                 }
 
-                                // Etiketi taşı
-                                XYZ translation = currentStart - tag.TagHeadPosition;
-                                ElementTransformUtils.MoveElement(_doc, tag.Id, translation);
-                                Logger.LogSuccess($"ID {tag.Id}: Yeni konum X={currentStart.X:F3}, Y={currentStart.Y:F3}");
+                                Logger.LogSuccess($"ID {tag.Id}: Yeni konum X={currentPosition.X:F3}, Y={currentPosition.Y:F3}");
 
-                                // Lider ayarlarını güncelle
+                                // Leader ayarlarını güncelle
                                 if (tag.HasLeader && tag.GetTaggedLocalElementIds().Any())
                                 {
                                     var element = _doc.GetElement(tag.GetTaggedLocalElementIds().First());
