@@ -31,10 +31,10 @@ namespace TagsOrderingPlugin
                 // Assembly bilgilerini al
                 string assemblyPath = Assembly.GetExecutingAssembly().Location;
 
-                // Push butonu oluştur
+                var version = Assembly.GetExecutingAssembly().GetName().Version;
                 PushButtonData buttonData = new PushButtonData(
                     "AutoArrangeButton",
-                    "Auto Arrange",
+                    $"AutoTag v{version.Major}.{version.Minor}.{version.Build}",
                     assemblyPath,
                     "TagsOrderingPlugin.TagsOrderingCommand")
                 {
@@ -42,7 +42,8 @@ namespace TagsOrderingPlugin
                     LargeImage = GetImageFromBase64(BASE64_ICON)
                 };
 
-                panel.AddItem(buttonData);
+                PushButton button = panel.AddItem(buttonData) as PushButton;
+                button.ItemText = $"AutoTag v{version.Major}.{version.Minor}.{version.Build}";
             }
             catch (Exception ex)
             {

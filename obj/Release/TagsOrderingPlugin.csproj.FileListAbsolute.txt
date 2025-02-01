@@ -5,3 +5,4 @@ C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Release\TagsOrderingPlugin.Gene
 C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Release\TagsOrderingPlugin.csproj.CoreCompileInputs.cache
 C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Release\TagsOrderingPlugin.dll
 C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Release\TagsOrderingPlugin.pdb
+C:\Users\BT\CascadeProjects\AutoTag_Deepseek\obj\Release\TagsOrderingPlugin.sourcelink.json

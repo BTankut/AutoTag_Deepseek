@@ -15,6 +15,8 @@ namespace TagsOrderingPlugin
         private readonly Document _doc;
         private readonly UIDocument _uiDoc;
         private const double SPACING_MM = 500.0; // 500mm sabit aralık
+        private const double SAFETY_MARGIN = 100.0; // 100mm güvenlik marjı
+        private const double OFFSET_MM = 100.0; // 100mm offset mesafesi
 
         /// <summary>
         /// AutoSortWithManualPlacement sınıfının yapıcı metodu
@@ -52,12 +54,100 @@ namespace TagsOrderingPlugin
             }
         }
 
+        private Element GetFirstTaggedElement(IndependentTag tag)
+        {
+            var elements = tag.GetTaggedLocalElements();
+            return elements?.FirstOrDefault();
+        }
+
+        private BoundingBoxXYZ GetTagBoundingBox(IndependentTag tag, XYZ position)
+        {
+            var element = GetFirstTaggedElement(tag);
+            var boundingBox = element?.get_BoundingBox(null);
+            if (boundingBox == null) return null;
+
+            XYZ translation = position - tag.TagHeadPosition;
+            boundingBox.Min += translation;
+            boundingBox.Max += translation;
+
+            return boundingBox;
+        }
+
+        private bool DoBoxesOverlap(BoundingBoxXYZ box1, BoundingBoxXYZ box2)
+        {
+            if (box1 == null || box2 == null) return false;
+
+            bool xOverlap = !(box1.Max.X <= box2.Min.X || box1.Min.X >= box2.Max.X);
+            bool yOverlap = !(box1.Max.Y <= box2.Min.Y || box1.Min.Y >= box2.Max.Y);
+
+            bool overlaps = xOverlap && yOverlap;
+            if (overlaps)
+            {
+                Logger.LogDebug($"Çakışma detayları: X-Overlap: {xOverlap}, Y-Overlap: {yOverlap}");
+                Logger.LogDebug($"Box1: Min({box1.Min.X},{box1.Min.Y}) Max({box1.Max.X},{box1.Max.Y})");
+                Logger.LogDebug($"Box2: Min({box2.Min.X},{box2.Min.Y}) Max({box2.Max.X},{box2.Max.Y})");
+            }
+
+            return overlaps;
+        }
+
+        private bool HasOverlap(IndependentTag currentTag, XYZ newPosition, List<IndependentTag> existingTags)
+        {
+            var currentBox = GetTagBoundingBox(currentTag, newPosition);
+            if (currentBox == null) return false;
+
+            // Çakışma kontrolü için güvenlik marjı ekle
+            double margin = UnitUtils.ConvertToInternalUnits(SAFETY_MARGIN, UnitTypeId.Millimeters);
+            var expandedBox = new BoundingBoxXYZ
+            {
+                Min = new XYZ(currentBox.Min.X - margin, currentBox.Min.Y - margin, currentBox.Min.Z),
+                Max = new XYZ(currentBox.Max.X + margin, currentBox.Max.Y + margin, currentBox.Max.Z)
+            };
+
+            foreach (var existingTag in existingTags)
+            {
+                var existingBox = GetTagBoundingBox(existingTag, existingTag.TagHeadPosition);
+                if (existingBox == null) continue;
+
+                if (DoBoxesOverlap(expandedBox, existingBox))
+                {
+                    Logger.LogDebug($"Çakışma tespit edildi: Mevcut etiket: {currentTag.Id}, Çakışan etiket: {existingTag.Id}");
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Etiketin gerçek sınırlarını hesaplar
+        /// </summary>
+        private (double minX, double maxX, double minY, double maxY) GetTagBounds(IndependentTag tag)
+        {
+            var boundingBox = tag.get_BoundingBox(_doc.ActiveView);
+            if (boundingBox == null) return (0, 0, 0, 0);
+
+            // TagHeadPosition'a göre düzeltme yap
+            var tagHead = tag.TagHeadPosition;
+            var centerX = (boundingBox.Max.X + boundingBox.Min.X) / 2;
+            var centerY = (boundingBox.Max.Y + boundingBox.Min.Y) / 2;
+
+            // Merkez noktası ile TagHeadPosition arasındaki farkı hesapla
+            var offsetX = tagHead.X - centerX;
+            var offsetY = tagHead.Y - centerY;
+
+            // Sınırları düzelt
+            return (
+                boundingBox.Min.X + offsetX,
+                boundingBox.Max.X + offsetX,
+                boundingBox.Min.Y + offsetY,
+                boundingBox.Max.Y + offsetY
+            );
+        }
+
         /// <summary>
         /// Sıralanmış etiketleri belirtilen noktadan başlayarak konumlandırır
         /// </summary>
-        /// <param name="sortedTags">Sıralanmış etiketler</param>
-        /// <param name="startPoint">Başlangıç noktası</param>
-        /// <returns>Başarı durumu</returns>
         public bool PlaceSortedTags(List<IndependentTag> sortedTags, XYZ startPoint, TagSortDirection direction)
         {
             try
@@ -71,23 +161,81 @@ namespace TagsOrderingPlugin
 
                     try
                     {
-                        // Spacing değerlerini hesapla
-                        double spacingFeet = UnitUtils.ConvertToInternalUnits(SPACING_MM, UnitTypeId.Millimeters);
-                        Logger.LogInfo($"Aralık mesafesi: {SPACING_MM}mm = {spacingFeet:F6} feet");
+                        // Offset değerini hesapla (100mm)
+                        double offset = UnitUtils.ConvertToInternalUnits(OFFSET_MM, UnitTypeId.Millimeters);
+                        Logger.LogInfo($"Offset mesafesi: {OFFSET_MM}mm = {offset:F6} feet");
 
-                        // Başlangıç noktasını belirle
-                        XYZ currentPosition = startPoint;
+                        XYZ currentStart = startPoint;
+                        double lastTagEndX = startPoint.X;
+                        double lastTagEndY = startPoint.Y;
 
-                        // Etiketleri konumlandır
                         foreach (var tag in sortedTags)
                         {
                             try
                             {
-                                // 1. Etiket konumunu güncelle
-                                tag.TagHeadPosition = currentPosition;
-                                Logger.LogSuccess($"ID {tag.Id}: Yeni konum X={currentPosition.X:F3}, Y={currentPosition.Y:F3}");
+                                // Etiketin gerçek sınırlarını al
+                                var (minX, maxX, minY, maxY) = GetTagBounds(tag);
+                                double tagWidth = maxX - minX;
+                                double tagHeight = maxY - minY;
 
-                                // 2. Lider ayarlarını güncelle
+                                // TagHeadPosition ile etiketin sol/üst kenarı arasındaki mesafeyi hesapla
+                                double headToLeftEdge = tag.TagHeadPosition.X - minX;
+                                double headToTopEdge = tag.TagHeadPosition.Y - maxY;
+
+                                // Yeni konumu hesapla
+                                if (direction == TagSortDirection.Horizontal)
+                                {
+                                    if (tag == sortedTags.First())
+                                    {
+                                        // İlk etiket için başlangıç noktasını kullan
+                                        currentStart = startPoint;
+                                        // Etiketin sağ kenarını hesapla
+                                        lastTagEndX = startPoint.X + (maxX - tag.TagHeadPosition.X);
+                                    }
+                                    else
+                                    {
+                                        // Diğer etiketler için bir önceki etiketin sağ kenarından offset kadar sonra
+                                        currentStart = new XYZ(
+                                            lastTagEndX + offset,
+                                            startPoint.Y,
+                                            startPoint.Z
+                                        );
+                                        // Yeni etiketin sağ kenarını hesapla
+                                        lastTagEndX = currentStart.X + (maxX - tag.TagHeadPosition.X);
+                                    }
+
+                                    Logger.LogDebug($"ID {tag.Id}: X={currentStart.X:F3}, Width={tagWidth:F3}, EndX={lastTagEndX:F3}");
+                                }
+                                else
+                                {
+                                    if (tag == sortedTags.First())
+                                    {
+                                        // İlk etiket için başlangıç noktasını kullan
+                                        currentStart = startPoint;
+                                        // Etiketin alt kenarını hesapla
+                                        lastTagEndY = startPoint.Y + (minY - tag.TagHeadPosition.Y);
+                                    }
+                                    else
+                                    {
+                                        // Diğer etiketler için bir önceki etiketin alt kenarından offset kadar aşağı
+                                        currentStart = new XYZ(
+                                            startPoint.X,
+                                            lastTagEndY - offset,
+                                            startPoint.Z
+                                        );
+                                        // Yeni etiketin alt kenarını hesapla
+                                        lastTagEndY = currentStart.Y + (minY - tag.TagHeadPosition.Y);
+                                    }
+
+                                    Logger.LogDebug($"ID {tag.Id}: Y={currentStart.Y:F3}, Height={tagHeight:F3}, EndY={lastTagEndY:F3}");
+                                }
+
+                                // Etiketi taşı
+                                XYZ translation = currentStart - tag.TagHeadPosition;
+                                ElementTransformUtils.MoveElement(_doc, tag.Id, translation);
+                                Logger.LogSuccess($"ID {tag.Id}: Yeni konum X={currentStart.X:F3}, Y={currentStart.Y:F3}");
+
+                                // Lider ayarlarını güncelle
                                 if (tag.HasLeader && tag.GetTaggedLocalElementIds().Any())
                                 {
                                     var element = _doc.GetElement(tag.GetTaggedLocalElementIds().First());
@@ -103,19 +251,6 @@ namespace TagsOrderingPlugin
                                         }
                                     }
                                 }
-
-                                // 3. Bir sonraki pozisyonu hesapla
-                                currentPosition = direction == TagSortDirection.Horizontal
-                                    ? new XYZ(
-                                        currentPosition.X + spacingFeet,  // X ekseninde sağa doğru
-                                        currentPosition.Y,
-                                        currentPosition.Z
-                                    )
-                                    : new XYZ(
-                                        currentPosition.X,
-                                        currentPosition.Y - spacingFeet,  // Y ekseninde aşağı doğru
-                                        currentPosition.Z
-                                    );
                             }
                             catch (Exception ex)
                             {
