@@ -49,34 +49,44 @@ namespace TagsOrderingPlugin
         {
             try
             {
+                Logger.LogInfo("GetSelectedTags metodu başlatıldı");
+                
                 // IndependentTag filtresi oluştur
                 ISelectionFilter tagFilter = new TagFilter();
+                Logger.LogInfo("Tag filtresi oluşturuldu");
 
                 // Kullanıcıya seçim yaptır
+                Logger.LogInfo("Kullanıcı seçimi bekleniyor...");
                 IList<Reference> selectedRefs = _uiDoc.Selection.PickObjects(
                     ObjectType.Element,
                     tagFilter,
                     "Düzenlenecek etiketleri seçin");
 
+                Logger.LogInfo($"Seçilen referans sayısı: {selectedRefs?.Count ?? 0}");
+
                 // Seçilen referansları ElementId'ye dönüştür
-                var tagIds = selectedRefs.Select(r => r.ElementId).ToList();
+                var tagIds = selectedRefs?.Select(r => r.ElementId).ToList();
+                Logger.LogInfo($"Dönüştürülen ElementId sayısı: {tagIds?.Count ?? 0}");
 
                 // Seçim validasyonu
                 if (!ValidateSelection(tagIds))
                 {
+                    Logger.LogInfo("Seçim validasyonu başarısız");
                     TaskDialog.Show("Hata", "Seçilen elementlerden bazıları geçerli etiket değil.");
                     return null;
                 }
 
+                Logger.LogInfo($"Seçim validasyonu başarılı. Toplam {tagIds.Count} etiket seçildi.");
                 return tagIds;
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
-                // Kullanıcı seçimi iptal etti
+                Logger.LogInfo("Kullanıcı seçimi iptal etti");
                 return null;
             }
             catch (Exception ex)
             {
+                Logger.LogError("GetSelectedTags metodunda beklenmeyen hata", ex);
                 TaskDialog.Show("Hata", $"Etiket seçimi sırasında hata oluştu: {ex.Message}");
                 return null;
             }

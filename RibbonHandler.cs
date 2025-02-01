@@ -34,16 +34,16 @@ namespace TagsOrderingPlugin
                 var version = Assembly.GetExecutingAssembly().GetName().Version;
                 PushButtonData buttonData = new PushButtonData(
                     "AutoArrangeButton",
-                    $"AutoTag v{version.Major}.{version.Minor}.{version.Build}",
+                    $"AutoTag v{version.Major}.{version.Minor}",
                     assemblyPath,
                     "TagsOrderingPlugin.TagsOrderingCommand")
                 {
-                    ToolTip = "Etiketleri otomatik düzenle",
+                    ToolTip = "Seçilen etiketleri otomatik olarak düzenler.",
                     LargeImage = GetImageFromBase64(BASE64_ICON)
                 };
 
-                PushButton button = panel.AddItem(buttonData) as PushButton;
-                button.ItemText = $"AutoTag v{version.Major}.{version.Minor}.{version.Build}";
+                // Butonu panele ekle
+                panel.AddItem(buttonData);
             }
             catch (Exception ex)
             {
@@ -68,7 +68,7 @@ namespace TagsOrderingPlugin
                     image.StreamSource = ms;
                     image.EndInit();
                 }
-                
+
                 return image;
             }
             catch (Exception)

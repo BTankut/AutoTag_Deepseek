@@ -23,5 +23,10 @@ namespace TagsOrderingPlugin.Utilities
                 Console.WriteLine($"[ERROR] StackTrace: {ex.StackTrace}");
             }
         }
+
+        public static void LogWarning(string message)
+        {
+            Console.WriteLine($"[WARNING] {message}");
+        }
     }
 }

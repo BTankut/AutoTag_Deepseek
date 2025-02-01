@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq; // LINQ yöntemlerini kullanabilmek için eklendi.
+using System.Linq;
 using Autodesk.Revit.DB;
 
 namespace TagsOrderingPlugin
@@ -12,10 +12,15 @@ namespace TagsOrderingPlugin
     {
         private readonly Document _doc;
 
+        // Loglama mesajları
+        private const string LOG_HORIZONTAL_SORT = "Yatay sıralama tamamlandı (elementler soldan sağa sıralandı).";
+        private const string LOG_VERTICAL_SORT = "Dikey sıralama tamamlandı (mesafe ve Y koordinatına göre sıralandı).";
+        private const string LOG_SIDE_INFO = "Etiketler {0} tarafta.";
+        private const string LOG_SORT_SUMMARY = "Toplam sıralanan etiket sayısı: {0}, Yön: {1}";
+
         /// <summary>
         /// TagSorter sınıfının yapıcı metodu.
         /// </summary>
-        /// <param name="doc">Aktif Revit dökümanı.</param>
         public TagSorter(Document doc)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
@@ -24,80 +29,34 @@ namespace TagsOrderingPlugin
         /// <summary>
         /// Etiketleri belirtilen yönde sıralar.
         /// </summary>
-        /// <param name="tagIds">Sıralanacak etiket element ID'leri.</param>
-        /// <param name="direction">Sıralama yönü.</param>
-        /// <param name="startPoint">Başlangıç noktası (dikey sıralama için gereklidir).</param>
-        /// <returns>Sıralanmış etiket listesi.</returns>
         public List<IndependentTag> SortByCoordinates(List<ElementId> tagIds, TagSortDirection direction, XYZ startPoint)
         {
             try
             {
-                if (tagIds == null || !tagIds.Any()) // LINQ yöntemi
+                if (tagIds == null || !tagIds.Any())
+                {
+                    Logger.LogWarning("Sıralanacak etiket bulunamadı.");
                     return new List<IndependentTag>();
-
-                // Geçerli etiketleri filtrele.
-                var validTags = tagIds
-                    .Select(id => _doc.GetElement(id) as IndependentTag)
-                    .Where(tag => tag != null && tag.IsValidObject) // LINQ yöntemi
-                    .ToList();
-
-                List<IndependentTag> sortedTags;
-
-                if (direction == TagSortDirection.Horizontal)
-                {
-                    // Etiketleri soldan sağa sırala.
-                    var tagsWithElements = validTags.Select(tag =>
-                    {
-                        var element = _doc.GetElement(tag.GetTaggedLocalElementIds().First()); // LINQ yöntemi
-                        var elementLocation = (element?.Location as LocationPoint)?.Point;
-
-                        return new
-                        {
-                            Tag = tag,
-                            ElementX = elementLocation?.X ?? tag.TagHeadPosition.X
-                        };
-                    });
-
-                    // Soldan sağa sıralama.
-                    sortedTags = tagsWithElements
-                        .OrderBy(t => t.ElementX) // LINQ yöntemi
-                        .Select(t => t.Tag)
-                        .ToList();
-
-                    Logger.LogInfo("Yatay sıralama tamamlandı (elementler soldan sağa sıralandı).");
-                }
-                else
-                {
-                    // Dikey sıralama (yukarıdan aşağıya).
-                    var tagsWithLocations = validTags.Select(tag =>
-                    {
-                        var element = _doc.GetElement(tag.GetTaggedLocalElementIds().First()); // LINQ yöntemi
-                        var elementLocation = (element?.Location as LocationPoint)?.Point;
-                        var location = elementLocation ?? tag.TagHeadPosition;
-
-                        return new
-                        {
-                            Tag = tag,
-                            Location = location,
-                            Distance = Math.Abs(location.X - startPoint.X)
-                        };
-                    }).ToList();
-
-                    // Başlangıç noktasına göre etiketlerin hangi tarafta olduğunu belirle.
-                    bool isLeftSide = tagsWithLocations.Average(t => t.Location.X) < startPoint.X;
-                    Logger.LogInfo($"Etiketler {(isLeftSide ? "sol" : "sağ")} tarafta.");
-
-                    // Etiketleri önce mesafeye (azalan), sonra Y koordinatına (azalan) göre sırala.
-                    sortedTags = tagsWithLocations
-                        .OrderByDescending(t => t.Distance) // LINQ yöntemi
-                        .ThenByDescending(t => t.Location.Y) // LINQ yöntemi
-                        .Select(t => t.Tag)
-                        .ToList();
-
-                    Logger.LogInfo("Dikey sıralama tamamlandı (mesafe ve Y koordinatına göre sıralandı).");
                 }
 
-                Logger.LogDebug($"Toplam sıralanan etiket sayısı: {sortedTags.Count}, Yön: {direction}");
+                if (startPoint == null)
+                {
+                    Logger.LogError("Başlangıç noktası null olamaz.");
+                    return new List<IndependentTag>();
+                }
+
+                var validTags = GetValidTags(tagIds);
+                if (!validTags.Any())
+                {
+                    Logger.LogWarning("Geçerli etiket bulunamadı.");
+                    return new List<IndependentTag>();
+                }
+
+                var sortedTags = direction == TagSortDirection.Horizontal
+                    ? SortHorizontally(validTags)
+                    : SortVertically(validTags, startPoint);
+
+                Logger.LogDebug(string.Format(LOG_SORT_SUMMARY, sortedTags.Count, direction));
                 return sortedTags;
             }
             catch (Exception ex)
@@ -105,6 +64,104 @@ namespace TagsOrderingPlugin
                 Logger.LogError("Etiketler sıralanamadı", ex);
                 return new List<IndependentTag>();
             }
+        }
+
+        /// <summary>
+        /// Verilen ID'lerden geçerli etiketleri filtreler.
+        /// </summary>
+        private List<IndependentTag> GetValidTags(List<ElementId> tagIds)
+        {
+            return tagIds
+                .Select(id => _doc.GetElement(id) as IndependentTag)
+                .Where(tag => tag != null && tag.IsValidObject)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Etiketleri yatay olarak sıralar (soldan sağa).
+        /// </summary>
+        private List<IndependentTag> SortHorizontally(List<IndependentTag> tags)
+        {
+            var tagsWithElements = tags.Select(tag =>
+            {
+                var element = GetTaggedElement(tag);
+                var elementLocation = GetElementLocation(element);
+
+                return new
+                {
+                    Tag = tag,
+                    ElementX = elementLocation?.X ?? tag.TagHeadPosition.X
+                };
+            });
+
+            var sortedTags = tagsWithElements
+                .OrderBy(t => t.ElementX)
+                .Select(t => t.Tag)
+                .ToList();
+
+            Logger.LogInfo(LOG_HORIZONTAL_SORT);
+            return sortedTags;
+        }
+
+        /// <summary>
+        /// Etiketleri dikey olarak sıralar (yukarıdan aşağıya).
+        /// </summary>
+        private List<IndependentTag> SortVertically(List<IndependentTag> tags, XYZ startPoint)
+        {
+            var tagsWithLocations = tags.Select(tag =>
+            {
+                var element = GetTaggedElement(tag);
+                var elementLocation = GetElementLocation(element);
+                var location = elementLocation ?? tag.TagHeadPosition;
+
+                return new
+                {
+                    Tag = tag,
+                    Location = location,
+                    Distance = Math.Abs(location.X - startPoint.X)
+                };
+            }).ToList();
+
+            bool isLeftSide = tagsWithLocations.Average(t => t.Location.X) < startPoint.X;
+            Logger.LogInfo(string.Format(LOG_SIDE_INFO, isLeftSide ? "sol" : "sağ"));
+
+            var sortedTags = tagsWithLocations
+                .OrderByDescending(t => t.Distance)
+                .ThenByDescending(t => t.Location.Y)
+                .Select(t => t.Tag)
+                .ToList();
+
+            Logger.LogInfo(LOG_VERTICAL_SORT);
+            return sortedTags;
+        }
+
+        /// <summary>
+        /// Etiketin bağlı olduğu elementi getirir.
+        /// </summary>
+        private Element GetTaggedElement(IndependentTag tag)
+        {
+            try
+            {
+                var elementId = tag.GetTaggedLocalElementIds().FirstOrDefault();
+                return elementId != null ? _doc.GetElement(elementId) : null;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Tag {tag.Id.IntegerValue} için element alınamadı", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Elementin lokasyon noktasını getirir.
+        /// </summary>
+        private XYZ GetElementLocation(Element element)
+        {
+            if (element?.Location is LocationPoint locPoint)
+            {
+                return locPoint.Point;
+            }
+            return null;
         }
     }
 }

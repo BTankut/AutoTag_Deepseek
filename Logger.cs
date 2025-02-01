@@ -55,6 +55,14 @@ namespace TagsOrderingPlugin
         }
 
         /// <summary>
+        /// Exception ile birlikte uyarı mesajı loglar
+        /// </summary>
+        public static void LogWarning(string message, Exception ex)
+        {
+            Log("WARNING", $"{message} - Exception: {ex.Message}");
+        }
+
+        /// <summary>
         /// Başarı mesajı loglar
         /// </summary>
         public static void LogSuccess(string message)

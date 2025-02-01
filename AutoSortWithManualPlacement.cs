@@ -1,5 +1,3 @@
-#define USE_BOUNDING_BOX
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,17 +15,18 @@ namespace TagsOrderingPlugin
         private const double HORIZONTAL_SPACING_MM = 80.0;  
         private const double HORIZONTAL_MARGIN_MM = 20.0;   
 
-        // Dikey düzenleme için mesafe (daha büyük değerler)
+        // Dikey düzenleme için mesafe
         private const double VERTICAL_SPACING_MM = 150.0;   
         private const double VERTICAL_MARGIN_MM = 30.0;     
+        private const double VERTICAL_SPACING_MULTIPLIER = 3.0;  // Dikey aralık çarpanı
 
         // Birim dönüşümü
         private const double MM_TO_FEET = 304.8;     
 
         public AutoSortWithManualPlacement(Document doc, UIDocument uiDoc)
         {
-            _doc = doc;
-            _uiDoc = uiDoc;
+            _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+            _uiDoc = uiDoc ?? throw new ArgumentNullException(nameof(uiDoc));
         }
 
         /// <summary>
@@ -35,33 +34,43 @@ namespace TagsOrderingPlugin
         /// </summary>
         public bool PlaceSortedTags(List<IndependentTag> sortedTags, XYZ startPoint, TagSortDirection direction)
         {
-            if (sortedTags == null || !sortedTags.Any() || startPoint == null)
+            if (sortedTags == null || !sortedTags.Any())
+            {
+                Logger.LogError("Etiket listesi boş veya null");
                 return false;
+            }
+
+            if (startPoint == null)
+            {
+                Logger.LogError("Başlangıç noktası null");
+                return false;
+            }
 
             using (Transaction trans = new Transaction(_doc, "Etiketleri Konumlandır"))
             {
                 try
                 {
                     trans.Start();
+                    Logger.LogInfo($"Etiketler {direction} yönünde yerleştiriliyor...");
 
                     if (direction == TagSortDirection.Horizontal)
                     {
-                        // Yatay mesafe hesaplama
                         double horizontalSpacingFeet = (HORIZONTAL_SPACING_MM + HORIZONTAL_MARGIN_MM) / MM_TO_FEET;
                         PlaceTagsHorizontally(sortedTags, startPoint, horizontalSpacingFeet);
                     }
                     else
                     {
-                        // Dikey mesafe hesaplama
                         double verticalSpacingFeet = (VERTICAL_SPACING_MM + VERTICAL_MARGIN_MM) / MM_TO_FEET;
                         PlaceTagsVertically(sortedTags, startPoint, verticalSpacingFeet);
                     }
 
                     trans.Commit();
+                    Logger.LogInfo("Etiketler başarıyla yerleştirildi");
                     return true;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Logger.LogError("Etiketler yerleştirilirken hata oluştu", ex);
                     if (trans.HasStarted())
                         trans.RollBack();
                     return false;
@@ -123,7 +132,7 @@ namespace TagsOrderingPlugin
                 );
 
                 // Bir sonraki etiket için Y konumunu güncelle
-                currentY -= spacingFeet * 3; 
+                currentY -= spacingFeet * VERTICAL_SPACING_MULTIPLIER;
                 UpdateTagLeader(tag);
             }
         }
@@ -134,7 +143,11 @@ namespace TagsOrderingPlugin
         private (double minX, double maxX, double minY, double maxY) GetTagBounds(IndependentTag tag)
         {
             var boundingBox = tag.get_BoundingBox(_doc.ActiveView);
-            if (boundingBox == null) return (0, 0, 0, 0);
+            if (boundingBox == null)
+            {
+                Logger.LogWarning($"Tag {tag.Id.IntegerValue} için bounding box alınamadı");
+                return (0, 0, 0, 0);
+            }
 
             return (
                 boundingBox.Min.X,
@@ -149,35 +162,48 @@ namespace TagsOrderingPlugin
         /// </summary>
         private void UpdateTagLeader(IndependentTag tag)
         {
-            if (tag.HasLeader && tag.GetTaggedLocalElementIds().Any())
+            try
             {
-                var elementId = tag.GetTaggedLocalElementIds().First();
-                var element = _doc.GetElement(elementId);
-
-                if (element != null && element.IsValidObject)
+                if (tag.HasLeader && tag.GetTaggedLocalElementIds().Any())
                 {
-                    var reference = tag.GetTaggedReferences().FirstOrDefault();
-                    if (reference != null && element.Location is LocationPoint locPoint)
+                    var elementId = tag.GetTaggedLocalElementIds().First();
+                    var element = _doc.GetElement(elementId);
+
+                    if (element != null && element.IsValidObject)
                     {
-                        tag.LeaderEndCondition = LeaderEndCondition.Attached;
-                        tag.SetLeaderEnd(reference, locPoint.Point);
+                        var reference = tag.GetTaggedReferences().FirstOrDefault();
+                        if (reference != null && element.Location is LocationPoint locPoint)
+                        {
+                            tag.LeaderEndCondition = LeaderEndCondition.Attached;
+                            tag.SetLeaderEnd(reference, locPoint.Point);
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Tag {tag.Id.IntegerValue} için leader güncellenemedi", ex);
             }
         }
 
         /// <summary>
         /// Kullanıcıdan başlangıç noktası seçmesini ister.
         /// </summary>
-        /// <returns>Seçilen nokta veya null.</returns>
         public XYZ GetStartPoint()
         {
             try
             {
+                Logger.LogInfo("Kullanıcıdan başlangıç noktası seçimi bekleniyor...");
                 return _uiDoc.Selection.PickPoint("Etiketlerin başlayacağı noktayı seçin");
             }
-            catch (Exception)
+            catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
+                Logger.LogInfo("Kullanıcı nokta seçimini iptal etti");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Nokta seçimi sırasında hata oluştu", ex);
                 return null;
             }
         }
