@@ -1,0 +1,56 @@
+lokal proje klasörü: "C:\Users\BT\CascadeProjects\AutoTag_Deepseek"
+Herhangi bir dosyada majör bir değişiklik yaparsan mutlaka proje klasörü içinde etkilenebilecek diğer dosyaları da kontrol etmeliyiz.
+
+Proje Genel Bilgileri:
+Proje Adı: AutoTag_Deepseek
+Platform: Autodesk Revit 2022
+Tür: Revit Add-in (Plugin)
+Dil: C# (.NET Framework)
+GitHub: https://github.com/BTankut/AutoTag_Deepseek
+
+Projenin Amacı:
+Revit projelerinde etiketlerin (tags) otomatik olarak düzenlenmesi
+Etiketlerin yatay veya dikey olarak sıralanması
+Kullanıcı tarafından seçilen başlangıç noktasına göre etiketlerin konumlandırılması
+
+Ana Bileşenler:
+TagsOrderingCommand.cs: Ana komut sınıfı, kullanıcı etkileşimini yönetir
+TagSorter.cs: Etiket sıralama mantığını içerir
+TagSelection.cs: Etiket seçim işlemlerini yönetir
+AutoSortWithManualPlacement.cs: Etiketlerin manuel yerleşimini kontrol eder
+RibbonHandler.cs: Revit ribbon arayüzünü yönetir
+Logger.cs: Uygulama genelinde loglama işlemlerini yönetir
+
+Temel İş Akışı:
+Kullanıcı Revit ribbon'ından "AutoTag" butonuna tıklar
+İlgili etiketleri seçer
+Yatay/dikey sıralama yönünü belirler
+Başlangıç noktasını seçer
+Etiketler seçilen yöne göre otomatik olarak sıralanır
+
+Önemli Teknik Detaylar:
+Etiket aralığı: 100mm sabit mesafe
+Koordinat sistemi: Revit internal koordinat sistemi kullanılır
+Etiket validasyonu: IndependentTag tipinde elementler kontrol edilir
+Transaction yönetimi: Her işlem için TransactionGroup kullanılır
+
+Hata Yönetimi:
+Try-catch blokları ile exception handling
+Detaylı loglama (AppData klasöründe TagsOrdering.log)
+Kullanıcı geri bildirimi için TaskDialog kullanımı
+
+Kullanıcı Arayüzü:
+BIRD testTask sekmesi altında Tags Tools paneli
+AutoTag butonu
+Yatay/Dikey sıralama seçim diyaloğu
+İşlem sonucu bildirimleri
+Önemli Dosya Konumları:
+
+Plugin DLL: C:\ProgramData\Autodesk\Revit\Addins\2022\
+Log dosyası: %AppData%\TagsOrdering.log
+Addin dosyası: .addin formatında Revit Addins klasöründe
+
+Versiyon Kontrolü:
+GitHub üzerinde master branch kullanılır
+Her commit İngilizce açıklama ve versiyon numarası içerir
+Binary dosyalar (.dll, .pdb) GitHub'a dahil edilir
