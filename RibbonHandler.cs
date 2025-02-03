@@ -22,7 +22,7 @@ namespace TagsOrderingPlugin
             try
             {
                 // Ribbon sekmesi oluştur
-                string tabName = "BIRD testTask";
+                string tabName = "AutoTag";
                 application.CreateRibbonTab(tabName);
 
                 // Panel oluştur
@@ -34,7 +34,7 @@ namespace TagsOrderingPlugin
                 var version = Assembly.GetExecutingAssembly().GetName().Version;
                 PushButtonData buttonData = new PushButtonData(
                     "AutoArrangeButton",
-                    $"AutoTag v{version.Major}.{version.Minor}",
+                    "AutoTag",
                     assemblyPath,
                     "TagsOrderingPlugin.TagsOrderingCommand")
                 {
