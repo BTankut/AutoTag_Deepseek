@@ -54,3 +54,29 @@ Versiyon Kontrolü:
 GitHub üzerinde master branch kullanılır
 Her commit İngilizce açıklama ve versiyon numarası içerir
 Binary dosyalar (.dll, .pdb) GitHub'a dahil edilir
+
+GitHub Çalışma Kuralları:
+
+Branch Yapısı ve Geliştirme Süreci:
+1. master: Ana branch, kararlı sürümler
+2. develop: Geliştirme branch'i
+3. Tüm geliştirmeler 'develop' branch'inde yapılır
+4. Geliştirme tamamlandığında:
+   - develop -> master merge yapılır
+   - Her iki branch de GitHub'a push edilir
+
+Versiyon Numaralandırma ve Commit Kuralları:
+1. Format: Majör.Minör.Yama (örn: 1.1.2)
+2. Her commit'te versiyon numarası artırılmalı
+3. Commit mesajı formatı:
+   - İlk satır: "Version X.X.X: Kısa açıklama"
+   - Boş satır
+   - Detaylı değişiklik listesi
+
+Branch Senkronizasyonu:
+1. master'a merge yapıldıktan sonra:
+   - develop branch'i master ile güncellenir
+   - Her iki branch de GitHub'a push edilir
+2. Conflict durumunda:
+   - Önce develop'daki değişiklikler commit edilmeli
+   - Sonra master merge edilmeli
