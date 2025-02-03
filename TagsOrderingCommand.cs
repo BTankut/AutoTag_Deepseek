@@ -84,7 +84,7 @@ namespace TagsOrderingPlugin
                     }
 
                     // Başlangıç noktasını al ve etiketleri yerleştir
-                    if (!PlaceTagsAtStartPoint(doc, uidoc, selectedTags, direction.Value))
+                    if (!PlaceTagsAtStartPoint(doc, uidoc, selectedTags, direction))
                     {
                         Logger.LogInfo("Etiket yerleştirme başarısız, işlem geri alınıyor");
                         transGroup.RollBack();
@@ -139,7 +139,7 @@ namespace TagsOrderingPlugin
         /// <summary>
         /// Kullanıcıdan sıralama yönünü alır
         /// </summary>
-        private TagSortDirection? GetSortingDirection()
+        private string GetSortingDirection()
         {
             try
             {
@@ -160,12 +160,12 @@ namespace TagsOrderingPlugin
                 if (result == TaskDialogResult.CommandLink1)
                 {
                     Logger.LogInfo("Yatay sıralama seçildi");
-                    return TagSortDirection.Horizontal;
+                    return "Horizontal";
                 }
                 else if (result == TaskDialogResult.CommandLink2)
                 {
                     Logger.LogInfo("Dikey sıralama seçildi");
-                    return TagSortDirection.Vertical;
+                    return "Vertical";
                 }
                 else
                 {
@@ -183,7 +183,7 @@ namespace TagsOrderingPlugin
         /// <summary>
         /// Etiketleri başlangıç noktasına göre yerleştirir
         /// </summary>
-        private bool PlaceTagsAtStartPoint(Document doc, UIDocument uidoc, List<ElementId> selectedTags, TagSortDirection direction)
+        private bool PlaceTagsAtStartPoint(Document doc, UIDocument uidoc, List<ElementId> selectedTags, string direction)
         {
             try
             {
@@ -202,13 +202,14 @@ namespace TagsOrderingPlugin
 
                 if (!sortedTags.Any())
                 {
-                    Logger.LogError("Etiketler sıralanamadı.");
+                    Logger.LogInfo("Sıralanacak etiket bulunamadı.");
                     return false;
                 }
 
+                Logger.LogInfo($"Etiketler {direction} yönünde yerleştiriliyor...");
                 if (!placer.PlaceSortedTags(sortedTags, startPoint, direction))
                 {
-                    Logger.LogError("Etiketler konumlandırılamadı.");
+                    Logger.LogError("Etiketler yerleştirilemedi.");
                     return false;
                 }
 
@@ -216,7 +217,7 @@ namespace TagsOrderingPlugin
             }
             catch (Exception ex)
             {
-                Logger.LogError("Etiketleri yerleştirme sırasında hata", ex);
+                Logger.LogError("Etiket yerleştirme sırasında hata", ex);
                 return false;
             }
         }

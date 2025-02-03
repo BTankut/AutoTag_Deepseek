@@ -6,16 +6,15 @@ using Autodesk.Revit.DB;
 namespace TagsOrderingPlugin
 {
     /// <summary>
-    /// Etiketleri koordinatlarına göre sıralayan sınıf.
+    /// Etiket sıralama işlemlerini yöneten sınıf
     /// </summary>
     public class TagSorter
     {
         private readonly Document _doc;
 
         // Loglama mesajları
-        private const string LOG_HORIZONTAL_SORT = "Yatay sıralama tamamlandı (elementler soldan sağa sıralandı).";
         private const string LOG_VERTICAL_SORT = "Dikey sıralama tamamlandı (mesafe ve Y koordinatına göre sıralandı).";
-        private const string LOG_SIDE_INFO = "Etiketler {0} tarafta.";
+        private const string LOG_HORIZONTAL_SORT = "Yatay sıralama tamamlandı (mesafe ve X koordinatına göre sıralandı).";
         private const string LOG_SORT_SUMMARY = "Toplam sıralanan etiket sayısı: {0}, Yön: {1}";
 
         /// <summary>
@@ -23,13 +22,13 @@ namespace TagsOrderingPlugin
         /// </summary>
         public TagSorter(Document doc)
         {
-            _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+            _doc = doc;
         }
 
         /// <summary>
         /// Etiketleri belirtilen yönde sıralar.
         /// </summary>
-        public List<IndependentTag> SortByCoordinates(List<ElementId> tagIds, TagSortDirection direction, XYZ startPoint)
+        public List<IndependentTag> SortByCoordinates(List<ElementId> tagIds, string direction, XYZ startPoint)
         {
             try
             {
@@ -52,9 +51,9 @@ namespace TagsOrderingPlugin
                     return new List<IndependentTag>();
                 }
 
-                var sortedTags = direction == TagSortDirection.Horizontal
+                var sortedTags = direction == "Horizontal"
                     ? SortHorizontally(validTags)
-                    : SortVertically(validTags, startPoint);
+                    : SortVertically(validTags, startPoint, DetermineTagPlacementDirection(validTags, startPoint));
 
                 Logger.LogDebug(string.Format(LOG_SORT_SUMMARY, sortedTags.Count, direction));
                 return sortedTags;
@@ -104,35 +103,78 @@ namespace TagsOrderingPlugin
         }
 
         /// <summary>
-        /// Etiketleri dikey olarak sıralar (yukarıdan aşağıya).
+        /// Etiketlerin yerleşim yönünü belirler
         /// </summary>
-        private List<IndependentTag> SortVertically(List<IndependentTag> tags, XYZ startPoint)
+        public static string DetermineTagPlacementDirection(List<IndependentTag> tags, XYZ startPoint)
         {
-            var tagsWithLocations = tags.Select(tag =>
-            {
-                var element = GetTaggedElement(tag);
-                var elementLocation = GetElementLocation(element);
-                var location = elementLocation ?? tag.TagHeadPosition;
+            double avgTagY = tags.Average(t => t.TagHeadPosition.Y);
+            Logger.LogInfo($"Ortalama Tag Y: {avgTagY}, Başlangıç Y: {startPoint.Y}");
 
-                return new
-                {
-                    Tag = tag,
-                    Location = location,
-                    Distance = Math.Abs(location.X - startPoint.X)
-                };
+            // Etiketler ve başlangıç noktası aynı bölgede mi kontrol et
+            bool tagsAreBelow = avgTagY < 0;
+            bool startIsBelow = startPoint.Y < 0;
+
+            // Eğer etiketler ve başlangıç noktası aynı bölgedeyse
+            if (tagsAreBelow == startIsBelow)
+            {
+                return tagsAreBelow ? "BottomToTop" : "TopToBottom";
+            }
+            // Farklı bölgelerdeyse, etiketlerin bulunduğu bölgeye göre karar ver
+            else
+            {
+                return tagsAreBelow ? "BottomToTop" : "TopToBottom";
+            }
+        }
+
+        /// <summary>
+        /// Etiketleri dikey olarak sıralar.
+        /// </summary>
+        private List<IndependentTag> SortVertically(List<IndependentTag> tags, XYZ startPoint, string placementDirection)
+        {
+            // Her etiket için başlangıç noktasına göre bölge tespiti yap
+            var tagsWithRegion = tags.Select(tag => new
+            {
+                Tag = tag,
+                IsAbove = tag.TagHeadPosition.Y > startPoint.Y  // Başlangıç noktasının üstünde mi?
             }).ToList();
 
-            bool isLeftSide = tagsWithLocations.Average(t => t.Location.X) < startPoint.X;
-            Logger.LogInfo(string.Format(LOG_SIDE_INFO, isLeftSide ? "sol" : "sağ"));
+            // Kaç etiket üstte kaç etiket altta, logla
+            int aboveCount = tagsWithRegion.Count(t => t.IsAbove);
+            int belowCount = tagsWithRegion.Count - aboveCount;
+            Logger.LogInfo($"Üst bölgede {aboveCount} etiket, alt bölgede {belowCount} etiket var");
+            Logger.LogInfo($"Başlangıç noktası Y: {startPoint.Y}");
 
-            var sortedTags = tagsWithLocations
-                .OrderByDescending(t => t.Distance)
-                .ThenByDescending(t => t.Location.Y)
-                .Select(t => t.Tag)
-                .ToList();
+            // Etiketleri X koordinatına göre grupla
+            var groupedByX = tagsWithRegion
+                .GroupBy(t => Math.Round(t.Tag.TagHeadPosition.X, 3))
+                .OrderBy(g => Math.Abs(g.Key - startPoint.X));
+
+            var result = new List<IndependentTag>();
+
+            // Her X grubu için
+            foreach (var group in groupedByX)
+            {
+                var sortedTags = group.ToList();
+
+                // Y koordinatına göre sırala
+                if (sortedTags.First().IsAbove)
+                {
+                    // Üst bölgede yukarıdan aşağıya sırala (yerleştirme aşağıdan yukarı olacak)
+                    sortedTags.Sort((a, b) => b.Tag.TagHeadPosition.Y.CompareTo(a.Tag.TagHeadPosition.Y));
+                    Logger.LogInfo($"Üst bölge etiketleri yukarıdan aşağıya sıralanıyor (yerleştirme aşağıdan yukarı olacak)");
+                }
+                else
+                {
+                    // Alt bölgede yukarıdan aşağıya sırala (yerleştirme yukarıdan aşağı olacak)
+                    sortedTags.Sort((a, b) => b.Tag.TagHeadPosition.Y.CompareTo(a.Tag.TagHeadPosition.Y));
+                    Logger.LogInfo($"Alt bölge etiketleri yukarıdan aşağıya sıralanıyor (yerleştirme yukarıdan aşağı olacak)");
+                }
+
+                result.AddRange(sortedTags.Select(t => t.Tag));
+            }
 
             Logger.LogInfo(LOG_VERTICAL_SORT);
-            return sortedTags;
+            return result;
         }
 
         /// <summary>

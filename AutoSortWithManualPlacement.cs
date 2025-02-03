@@ -11,17 +11,22 @@ namespace TagsOrderingPlugin
         private readonly Document _doc;
         private readonly UIDocument _uiDoc;
 
-        // Yatay düzenleme için mesafe
-        private const double HORIZONTAL_SPACING_MM = 80.0;  
-        private const double HORIZONTAL_MARGIN_MM = 20.0;   
+        // Yatay düzenleme sabitleri
+        private const double HORIZONTAL_SPACING_MM = 80;
+        private const double HORIZONTAL_MARGIN_MM = 20;
+        private const double HORIZONTAL_SPACING_MULTIPLIER = 1.0;
 
-        // Dikey düzenleme için mesafe
-        private const double VERTICAL_SPACING_MM = 150.0;   
-        private const double VERTICAL_MARGIN_MM = 30.0;     
-        private const double VERTICAL_SPACING_MULTIPLIER = 3.0;  // Dikey aralık çarpanı
+        // Dikey düzenleme sabitleri
+        private const double VERTICAL_SPACING_MM = 150;
+        private const double VERTICAL_MARGIN_MM = 30;
+        private const double VERTICAL_SPACING_MULTIPLIER = 3.0;
 
         // Birim dönüşümü
         private const double MM_TO_FEET = 304.8;     
+
+        // Spacing hesaplamaları
+        private const double HORIZONTAL_SPACING_FEET = (HORIZONTAL_SPACING_MM + HORIZONTAL_MARGIN_MM) / MM_TO_FEET;
+        private const double VERTICAL_SPACING_FEET = ((VERTICAL_SPACING_MM + VERTICAL_MARGIN_MM) / MM_TO_FEET) * VERTICAL_SPACING_MULTIPLIER;
 
         public AutoSortWithManualPlacement(Document doc, UIDocument uiDoc)
         {
@@ -30,51 +35,34 @@ namespace TagsOrderingPlugin
         }
 
         /// <summary>
-        /// Etiketleri yatay veya dikey olarak yerleştirir.
+        /// Sıralanmış etiketleri yerleştirir
         /// </summary>
-        public bool PlaceSortedTags(List<IndependentTag> sortedTags, XYZ startPoint, TagSortDirection direction)
+        public bool PlaceSortedTags(List<IndependentTag> tags, XYZ startPoint, string direction)
         {
-            if (sortedTags == null || !sortedTags.Any())
+            try
             {
-                Logger.LogError("Etiket listesi boş veya null");
-                return false;
-            }
-
-            if (startPoint == null)
-            {
-                Logger.LogError("Başlangıç noktası null");
-                return false;
-            }
-
-            using (Transaction trans = new Transaction(_doc, "Etiketleri Konumlandır"))
-            {
-                try
+                using (Transaction trans = new Transaction(_doc, "Etiketleri Yerleştir"))
                 {
                     trans.Start();
-                    Logger.LogInfo($"Etiketler {direction} yönünde yerleştiriliyor...");
 
-                    if (direction == TagSortDirection.Horizontal)
+                    if (direction == "Horizontal")
                     {
-                        double horizontalSpacingFeet = (HORIZONTAL_SPACING_MM + HORIZONTAL_MARGIN_MM) / MM_TO_FEET;
-                        PlaceTagsHorizontally(sortedTags, startPoint, horizontalSpacingFeet);
+                        PlaceTagsHorizontally(tags, startPoint, HORIZONTAL_SPACING_FEET);
                     }
                     else
                     {
-                        double verticalSpacingFeet = (VERTICAL_SPACING_MM + VERTICAL_MARGIN_MM) / MM_TO_FEET;
-                        PlaceTagsVertically(sortedTags, startPoint, verticalSpacingFeet);
+                        PlaceTagsVertically(tags, startPoint, VERTICAL_SPACING_FEET);
                     }
 
                     trans.Commit();
-                    Logger.LogInfo("Etiketler başarıyla yerleştirildi");
-                    return true;
                 }
-                catch (Exception ex)
-                {
-                    Logger.LogError("Etiketler yerleştirilirken hata oluştu", ex);
-                    if (trans.HasStarted())
-                        trans.RollBack();
-                    return false;
-                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Etiketleri yerleştirme sırasında hata", ex);
+                return false;
             }
         }
 
@@ -113,28 +101,48 @@ namespace TagsOrderingPlugin
         /// </summary>
         private void PlaceTagsVertically(List<IndependentTag> tags, XYZ startPoint, double spacingFeet)
         {
-            double baselineX = startPoint.X;
+            // Etiketlerin ortalama Y koordinatını hesapla
+            double avgTagY = tags.Average(t => t.TagHeadPosition.Y);
+            bool tagsAreBelow = avgTagY < startPoint.Y;
+
+            Logger.LogInfo($"Etiketler {(tagsAreBelow ? "alt (-y)" : "üst (+y)")} bölgede");
+            Logger.LogInfo($"Başlangıç noktası Y: {startPoint.Y}");
+            Logger.LogInfo($"Dikey spacing: {spacingFeet} feet");
+
+            // İlk etiketin Y koordinatını belirle
             double currentY = startPoint.Y;
 
+            // Etiketleri yerleştir
             foreach (var tag in tags)
             {
-                var (minX, maxX, minY, maxY) = GetTagBounds(tag);
-
-                // Etiketin mevcut konumu ile hedef konum arasındaki farkı hesapla
-                double deltaX = baselineX - tag.TagHeadPosition.X;
-                double deltaY = currentY - tag.TagHeadPosition.Y;
+                Logger.LogInfo($"Etiket yerleştiriliyor - Mevcut Y: {currentY}");
 
                 // Etiketi yeni konumuna taşı
                 tag.TagHeadPosition = new XYZ(
-                    tag.TagHeadPosition.X + deltaX,
-                    tag.TagHeadPosition.Y + deltaY,
-                    startPoint.Z
+                    startPoint.X,           // X koordinatı başlangıç noktasından
+                    currentY,               // Hesaplanan Y koordinatı
+                    tag.TagHeadPosition.Z   // Z koordinatı değişmiyor
                 );
 
                 // Bir sonraki etiket için Y konumunu güncelle
-                currentY -= spacingFeet * VERTICAL_SPACING_MULTIPLIER;
+                if (tagsAreBelow)
+                {
+                    // Alt bölgede (-y) aşağıdan yukarıya git
+                    currentY += spacingFeet;
+                    Logger.LogInfo($"Alt bölge - Sonraki Y: {currentY} (yukarı)");
+                }
+                else
+                {
+                    // Üst bölgede (+y) yukarıdan aşağıya git
+                    currentY -= spacingFeet;
+                    Logger.LogInfo($"Üst bölge - Sonraki Y: {currentY} (aşağı)");
+                }
+
+                // Leader'ı güncelle
                 UpdateTagLeader(tag);
             }
+
+            Logger.LogInfo("Etiketler başarıyla yerleştirildi");
         }
 
         /// <summary>
