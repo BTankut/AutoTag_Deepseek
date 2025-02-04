@@ -23,6 +23,13 @@ namespace TagsOrderingPlugin
         private const string SUCCESS_MESSAGE = "Etiketler başarıyla düzenlendi.";
         private const string INVALID_DOC_MESSAGE = "Geçerli bir Revit dökümanı bulunamadı.";
 
+        // Leader stil seçimi için UI metinleri
+        private const string LEADER_STYLE_DIALOG_TITLE = "Leader Stil Seçimi";
+        private const string LEADER_STYLE_INSTRUCTION = "Leader çizgi stili nasıl olsun?";
+        private const string LEADER_STYLE_CONTENT = "Düz: Element'ten etikete direkt çizgi\nL Şekli: 90 derece kırılımlı çizgi";
+        private const string STRAIGHT_LEADER_OPTION = "Düz Leader";
+        private const string L_SHAPE_LEADER_OPTION = "L Şekli Leader";
+
         /// <summary>
         /// Komut çalıştırıldığında işletilen metod
         /// </summary>
@@ -83,8 +90,20 @@ namespace TagsOrderingPlugin
                         return Result.Cancelled;
                     }
 
+                    // Leader stilini al
+                    Logger.LogInfo("Leader stil seçimi başlatılıyor...");
+                    var leaderStyle = GetLeaderStyle();
+                    Logger.LogInfo($"Seçilen leader stili: {leaderStyle}");
+                    
+                    if (leaderStyle == null)
+                    {
+                        Logger.LogInfo("Leader stil seçimi başarısız, işlem iptal ediliyor");
+                        transGroup.RollBack();
+                        return Result.Cancelled;
+                    }
+
                     // Başlangıç noktasını al ve etiketleri yerleştir
-                    if (!PlaceTagsAtStartPoint(doc, uidoc, selectedTags, direction))
+                    if (!PlaceTagsAtStartPoint(doc, uidoc, selectedTags, direction, leaderStyle))
                     {
                         Logger.LogInfo("Etiket yerleştirme başarısız, işlem geri alınıyor");
                         transGroup.RollBack();
@@ -181,9 +200,53 @@ namespace TagsOrderingPlugin
         }
 
         /// <summary>
+        /// Kullanıcıdan leader stilini alır
+        /// </summary>
+        private string GetLeaderStyle()
+        {
+            try
+            {
+                Logger.LogInfo("Leader stil seçimi bekleniyor...");
+                var dialog = new TaskDialog(LEADER_STYLE_DIALOG_TITLE)
+                {
+                    MainInstruction = LEADER_STYLE_INSTRUCTION,
+                    MainContent = LEADER_STYLE_CONTENT,
+                    CommonButtons = TaskDialogCommonButtons.None
+                };
+
+                dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, STRAIGHT_LEADER_OPTION);
+                dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, L_SHAPE_LEADER_OPTION);
+
+                var result = dialog.Show();
+                Logger.LogInfo($"Dialog sonucu: {result}");
+
+                if (result == TaskDialogResult.CommandLink1)
+                {
+                    Logger.LogInfo("Düz leader seçildi");
+                    return "Straight";
+                }
+                else if (result == TaskDialogResult.CommandLink2)
+                {
+                    Logger.LogInfo("L şekilli leader seçildi");
+                    return "LShape";
+                }
+                else
+                {
+                    Logger.LogInfo("Leader stil seçimi iptal edildi");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Leader stil seçimi sırasında hata", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Etiketleri başlangıç noktasına göre yerleştirir
         /// </summary>
-        private bool PlaceTagsAtStartPoint(Document doc, UIDocument uidoc, List<ElementId> selectedTags, string direction)
+        private bool PlaceTagsAtStartPoint(Document doc, UIDocument uidoc, List<ElementId> selectedTags, string direction, string leaderStyle)
         {
             try
             {
@@ -207,7 +270,7 @@ namespace TagsOrderingPlugin
                 }
 
                 Logger.LogInfo($"Etiketler {direction} yönünde yerleştiriliyor...");
-                if (!placer.PlaceSortedTags(sortedTags, startPoint, direction))
+                if (!placer.PlaceSortedTags(sortedTags, startPoint, direction, leaderStyle))
                 {
                     Logger.LogError("Etiketler yerleştirilemedi.");
                     return false;

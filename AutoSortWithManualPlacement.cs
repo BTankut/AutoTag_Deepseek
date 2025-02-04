@@ -37,7 +37,7 @@ namespace TagsOrderingPlugin
         /// <summary>
         /// Sıralanmış etiketleri yerleştirir
         /// </summary>
-        public bool PlaceSortedTags(List<IndependentTag> tags, XYZ startPoint, string direction)
+        public bool PlaceSortedTags(List<IndependentTag> tags, XYZ startPoint, string direction, string leaderStyle = "Straight")
         {
             try
             {
@@ -51,23 +51,22 @@ namespace TagsOrderingPlugin
                     }
                     else
                     {
-                        PlaceTagsVertically(tags, startPoint, VERTICAL_SPACING_FEET);
+                        PlaceTagsVertically(tags, startPoint, VERTICAL_SPACING_FEET, leaderStyle);
                     }
 
                     trans.Commit();
+                    return true;
                 }
-
-                return true;
             }
             catch (Exception ex)
             {
-                Logger.LogError("Etiketleri yerleştirme sırasında hata", ex);
+                Logger.LogError("Etiketler yerleştirilirken hata oluştu", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Etiketleri yatay olarak yerleştirir.
+        /// Etiketleri yatay olarak yerleştirir
         /// </summary>
         private void PlaceTagsHorizontally(List<IndependentTag> tags, XYZ startPoint, double spacingFeet)
         {
@@ -97,52 +96,95 @@ namespace TagsOrderingPlugin
         }
 
         /// <summary>
-        /// Etiketleri dikey olarak yerleştirir.
+        /// Etiketleri dikey olarak yerleştirir
         /// </summary>
-        private void PlaceTagsVertically(List<IndependentTag> tags, XYZ startPoint, double spacingFeet)
+        private void PlaceTagsVertically(List<IndependentTag> tags, XYZ startPoint, double spacing, string leaderStyle)
         {
             // Etiketlerin ortalama Y koordinatını hesapla
             double avgTagY = tags.Average(t => t.TagHeadPosition.Y);
-            bool tagsAreBelow = avgTagY < startPoint.Y;
+            bool isLowerRegion = avgTagY < startPoint.Y;
 
-            Logger.LogInfo($"Etiketler {(tagsAreBelow ? "alt (-y)" : "üst (+y)")} bölgede");
-            Logger.LogInfo($"Başlangıç noktası Y: {startPoint.Y}");
-            Logger.LogInfo($"Dikey spacing: {spacingFeet} feet");
+            Logger.LogInfo($"Etiketler {(isLowerRegion ? "alt (-y)" : "üst (+y)")} bölgede");
+            Logger.LogInfo($"Başlangıç noktası Y: {startPoint.Y}, X: {startPoint.X}");
+
+            // Element lokasyonlarını al
+            var tagLocations = new List<(IndependentTag tag, XYZ location)>();
+            foreach (var tag in tags)
+            {
+                var taggedElementIds = tag.GetTaggedLocalElementIds();
+                var taggedElement = taggedElementIds.Count > 0 ? _doc.GetElement(taggedElementIds.First()) : null;
+                var elementLocation = GetElementLocation(taggedElement);
+
+                if (elementLocation != null)
+                {
+                    tagLocations.Add((tag, elementLocation));
+                }
+            }
+
+            // Listenin yönünü belirle (startPoint'e göre elementlerin çoğunluğu hangi yönde)
+            bool isListOnNegativeX = tagLocations.Average(t => t.location.X) < startPoint.X;
+            Logger.LogInfo($"Liste {(isListOnNegativeX ? "negatif (-x)" : "pozitif (+x)")} yönde");
+
+            // X koordinatına göre sırala
+            var sortedTags = isLowerRegion
+                ? (isListOnNegativeX 
+                    ? tagLocations.OrderBy(t => t.location.X).Select(t => t.tag).ToList()           // Alt bölge, -x: Yakından uzağa
+                    : tagLocations.OrderByDescending(t => t.location.X).Select(t => t.tag).ToList()) // Alt bölge, +x: Uzaktan yakına
+                : (isListOnNegativeX 
+                    ? tagLocations.OrderByDescending(t => t.location.X).Select(t => t.tag).ToList()  // Üst bölge, -x: Uzaktan yakına
+                    : tagLocations.OrderBy(t => t.location.X).Select(t => t.tag).ToList());         // Üst bölge, +x: Yakından uzağa
 
             // İlk etiketin Y koordinatını belirle
             double currentY = startPoint.Y;
 
-            // Etiketleri yerleştir
-            foreach (var tag in tags)
+            foreach (var tag in sortedTags)
             {
-                Logger.LogInfo($"Etiket yerleştiriliyor - Mevcut Y: {currentY}");
+                var taggedElementIds = tag.GetTaggedLocalElementIds();
+                var taggedElement = taggedElementIds.Count > 0 ? _doc.GetElement(taggedElementIds.First()) : null;
+                var elementLocation = GetElementLocation(taggedElement);
 
-                // Etiketi yeni konumuna taşı
-                tag.TagHeadPosition = new XYZ(
-                    startPoint.X,           // X koordinatı başlangıç noktasından
-                    currentY,               // Hesaplanan Y koordinatı
-                    tag.TagHeadPosition.Z   // Z koordinatı değişmiyor
-                );
-
-                // Bir sonraki etiket için Y konumunu güncelle
-                if (tagsAreBelow)
+                if (elementLocation != null)
                 {
-                    // Alt bölgede (-y) aşağıdan yukarıya git
-                    currentY += spacingFeet;
-                    Logger.LogInfo($"Alt bölge - Sonraki Y: {currentY} (yukarı)");
-                }
-                else
-                {
-                    // Üst bölgede (+y) yukarıdan aşağıya git
-                    currentY -= spacingFeet;
-                    Logger.LogInfo($"Üst bölge - Sonraki Y: {currentY} (aşağı)");
-                }
+                    var newTagLocation = new XYZ(startPoint.X, currentY, startPoint.Z);
 
-                // Leader'ı güncelle
-                UpdateTagLeader(tag);
+                    if (leaderStyle == "LShape")
+                    {
+                        // Tam 90 derece L şeklinde leader için ara nokta oluştur
+                        var intermediatePoint = new XYZ(elementLocation.X, currentY, elementLocation.Z);
+                        tag.LeaderEndCondition = LeaderEndCondition.Free;
+                        
+                        // Element referansını ve leader elbow'u ayarla
+                        var reference = new Reference(taggedElement);
+                        tag.SetLeaderElbow(reference, intermediatePoint);
+
+                        // Leader başlangıç noktasını element üzerinde ayarla
+                        tag.SetLeaderEnd(reference, elementLocation);
+                    }
+
+                    tag.TagHeadPosition = newTagLocation;
+                    currentY -= spacing; // Her zaman yukarıdan aşağıya doğru yerleştir
+                }
             }
 
             Logger.LogInfo("Etiketler başarıyla yerleştirildi");
+        }
+
+        /// <summary>
+        /// Element'in lokasyonunu alır
+        /// </summary>
+        private XYZ GetElementLocation(Element element)
+        {
+            if (element == null) return null;
+
+            var locationPoint = element.Location as LocationPoint;
+            if (locationPoint != null)
+                return locationPoint.Point;
+
+            var locationCurve = element.Location as LocationCurve;
+            if (locationCurve != null)
+                return locationCurve.Curve.GetEndPoint(0);
+
+            return null;
         }
 
         /// <summary>
