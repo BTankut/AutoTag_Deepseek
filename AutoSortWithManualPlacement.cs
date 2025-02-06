@@ -10,6 +10,7 @@ namespace TagsOrderingPlugin
     {
         private readonly Document _doc;
         private readonly UIDocument _uiDoc;
+        private LeaderStyle CurrentLeaderStyle;
 
         // Yatay düzenleme sabitleri
         private const double HORIZONTAL_SPACING_MM = 80;
@@ -147,7 +148,7 @@ namespace TagsOrderingPlugin
                 {
                     var newTagLocation = new XYZ(startPoint.X, currentY, startPoint.Z);
 
-                    if (leaderStyle == "LShape")
+                    if (CurrentLeaderStyle == LeaderStyle.LShape)
                     {
                         // Tam 90 derece L şeklinde leader için ara nokta oluştur
                         var intermediatePoint = new XYZ(elementLocation.X, currentY, elementLocation.Z);
@@ -158,6 +159,13 @@ namespace TagsOrderingPlugin
                         tag.SetLeaderElbow(reference, intermediatePoint);
 
                         // Leader başlangıç noktasını element üzerinde ayarla
+                        tag.SetLeaderEnd(reference, elementLocation);
+                    }
+                    else
+                    {
+                        // Düz leader çizgisi için direkt bağlantı
+                        var reference = new Reference(taggedElement);
+                        tag.LeaderEndCondition = LeaderEndCondition.Free;
                         tag.SetLeaderEnd(reference, elementLocation);
                     }
 
@@ -244,7 +252,25 @@ namespace TagsOrderingPlugin
             try
             {
                 Logger.LogInfo("Kullanıcıdan başlangıç noktası seçimi bekleniyor...");
-                return _uiDoc.Selection.PickPoint("Etiketlerin başlayacağı noktayı seçin");
+                var startPoint = _uiDoc.Selection.PickPoint("Etiketlerin başlayacağı noktayı seçin");
+
+                // Geçici olarak, dikey yerleştirme durumu true kabul ediliyor
+                bool isVertical = true;
+                if (isVertical)
+                {
+                    // Kullanıcıya leader çizgi stilini seçtirmek için bir diyalog gösteriyoruz
+                    TaskDialog td = new TaskDialog("Leader Style Seçimi");
+                    td.MainInstruction = "Leader çizgi stilini seçiniz:";
+                    td.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Düz Leader (Mevcut)");
+                    td.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "L Leader (90° kırılımlı)");
+                    TaskDialogResult res = td.Show();
+                    
+                    // Kullanıcı seçimine göre leader stilini belirliyoruz
+                    LeaderStyle leaderStyle = (res == TaskDialogResult.CommandLink2) ? LeaderStyle.LShape : LeaderStyle.Straight;
+                    this.CurrentLeaderStyle = leaderStyle;
+                }
+                
+                return startPoint;
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
@@ -256,6 +282,22 @@ namespace TagsOrderingPlugin
                 Logger.LogError("Nokta seçimi sırasında hata oluştu", ex);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// L Leader çizimini gerçekleştirir
+        /// </summary>
+        private void DrawLLeader(IndependentTag tag, XYZ elementLocation, XYZ tagLocation)
+        {
+            // İlk segment: element konumundan, etiketin X koordinatına sahip bir ara nokta oluşturuyoruz
+            XYZ intermediatePoint = new XYZ(tagLocation.X, elementLocation.Y, elementLocation.Z);
+            
+            // Revit API kullanarak iki segmentli leader çizgisini oluşturun
+            // Örnek kod: 
+            // LeaderSegment segment1 = doc.CreateLeaderSegment(tag, elementLocation, intermediatePoint);
+            // LeaderSegment segment2 = doc.CreateLeaderSegment(tag, intermediatePoint, tagLocation);
+            
+            // Not: Yukarıdaki API çağrıları örnek olup, gerçek Revit API yöntemlerini kullanarak uygun şekilde implemente edilmelidir.
         }
     }
 }
